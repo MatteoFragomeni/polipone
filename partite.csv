@@ -1,3 +1,11 @@
 giornata,partita,casa,ospite,quota1,quotaX,quota2,risultato
-1,JUV-VER,Juventus,Verona,1.7,3.4,5.0,
-1,INT-ROM,Inter,Roma,1.9,3.3,4.2,
+1,Genoa-Lecce,Genoa,Lecce,1.91,3.3,4.3,
+1,sassuolo-napoli,sassuolo,napoli,5.9,3.95,1.57,
+1,milan-cremonese,milan,cremonese,1.34,5.2,8.25,
+1,roma-bologna,roma,bologna,2.13,3.25,3.55,
+1,cagliari-fiorentina,cagliari,fiorentina,3.25,3.25,2.26,
+1,como-lazio,como,lazio,2.42,3.25,2.95,
+1,atalanta-pisa,atalanta,pisa,1.38,4.95,7.25,
+1,juventus-parma,juventus,parma,1.42,4.65,7.0,
+1,udinese-verona,udinese,verona,1.96,3.35,4.0,
+1,inter-torino,inter,torino,1.42,4.7,7.0,
