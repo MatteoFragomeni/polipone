@@ -133,3 +133,5 @@ def calcola_classifica(utenti, pronostici, partite):
                         utenti.loc[utenti['utente']==p['utente'],'punti'] -= quota
     return utenti.sort_values('punti',ascending=False).reset_index(drop=True)
 
+
+

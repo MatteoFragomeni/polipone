@@ -249,3 +249,4 @@ elif page == "partite":
     page_partite(utenti, pronostici, partite)
 elif page == "utenti":
     page_utenti(utenti, pronostici, partite)
+
