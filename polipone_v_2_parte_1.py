@@ -1,61 +1,66 @@
+import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+import json
 
 APP_TITLE = "Polipone 🐙⚽"
-LOGO_FILE = "logo.png"  # Path del logo
-SHEET_NAME = "polipone_data"  # Nome del tuo Google Sheet
+LOGO_FILE = "logo.png"
+
+# -----------------------------
+# Google Sheets setup
+# -----------------------------
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# Autenticazione Google Sheets
-creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+# Legge le credenziali dalle Secret di Streamlit
+service_account_info = json.loads(st.secrets["google"]["service_account"])
+
+# Autorizzazione
+creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 gc = gspread.authorize(creds)
 
+# ID del documento e nomi dei fogli interni
+SHEET_ID = st.secrets["google"]["sheet_id"]
+UTENTI_SHEET_NAME = st.secrets["google"]["utenti_sheet_name"]
+PRONOSTICI_SHEET_NAME = st.secrets["google"]["pronostici_sheet_name"]
+PARTITE_SHEET_NAME = st.secrets["google"]["partite_sheet_name"]
+
 # -----------------------------
-# Utility
+# Funzioni di lettura / scrittura
+# -----------------------------
+def read_sheet(sheet_id, worksheet_name):
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.worksheet(worksheet_name)
+    data = ws.get_all_records()
+    return pd.DataFrame(data)
+
+def write_sheet(df, sheet_id, worksheet_name):
+    sh = gc.open_by_key(sheet_id)
+    try:
+        ws = sh.worksheet(worksheet_name)
+        sh.del_worksheet(ws)  # cancella il foglio vecchio
+    except gspread.exceptions.WorksheetNotFound:
+        pass
+    ws = sh.add_worksheet(title=worksheet_name, rows=df.shape[0]+10, cols=df.shape[1]+5)
+    ws.update([df.columns.values.tolist()] + df.values.tolist())
+
+# -----------------------------
+# Caricamento / salvataggio dati
 # -----------------------------
 def load_data():
-    """Carica dati da Google Sheet nelle tre tabelle principali."""
-    sh = gc.open(SHEET_NAME)
-    
-    # Leggi dati dai fogli
-    utenti = pd.DataFrame(sh.worksheet("utenti").get_all_records())
-    pronostici = pd.DataFrame(sh.worksheet("pronostici").get_all_records())
-    partite = pd.DataFrame(sh.worksheet("partite").get_all_records())
-    
-    # Assicura che tutte le colonne esistano
-    for df, cols in [
-        (utenti, ["utente", "punti", "jolly_usati", "gettoni_sfida"]),
-        (pronostici, ["utente", "giornata", "partita", "pronostico", "jolly", "sfida", "sfidato"]),
-        (partite, ["giornata", "partita", "casa", "ospite", "quota1", "quotaX", "quota2", "risultato"])
-    ]:
-        for c in cols:
-            if c not in df.columns:
-                df[c] = ""
-    
-    # Conversione tipi
+    utenti = read_sheet(SHEET_ID, UTENTI_SHEET_NAME)
+    pronostici = read_sheet(SHEET_ID, PRONOSTICI_SHEET_NAME)
+    partite = read_sheet(SHEET_ID, PARTITE_SHEET_NAME)
     utenti['punti'] = utenti['punti'].fillna(0).astype(float)
-    
     return utenti, pronostici, partite
 
 def save_all(utenti, pronostici, partite):
-    """Salva i DataFrame su Google Sheets sovrascrivendo i fogli."""
-    sh = gc.open(SHEET_NAME)
-    
-    # Salva utenti
-    sh.worksheet("utenti").clear()
-    sh.worksheet("utenti").update([utenti.columns.tolist()] + utenti.values.tolist())
-    
-    # Salva pronostici
-    sh.worksheet("pronostici").clear()
-    sh.worksheet("pronostici").update([pronostici.columns.tolist()] + pronostici.values.tolist())
-    
-    # Salva partite
-    sh.worksheet("partite").clear()
-    sh.worksheet("partite").update([partite.columns.tolist()] + partite.values.tolist())
+    write_sheet(utenti, SHEET_ID, UTENTI_SHEET_NAME)
+    write_sheet(pronostici, SHEET_ID, PRONOSTICI_SHEET_NAME)
+    write_sheet(partite, SHEET_ID, PARTITE_SHEET_NAME)
 
 # -----------------------------
-# Funzioni di supporto per classifica
+# Funzioni di calcolo classifica
 # -----------------------------
 def get_quota(match_row, pron):
     col = f"quota{pron}"
@@ -91,7 +96,7 @@ def calcola_classifica(utenti, pronostici, partite):
             else:
                 delta = -2*quota if jolly else 0.0
             utenti.loc[utenti['utente']==p['utente'],'punti'] += float(delta)
-            # gestione sfida
+            # sfida
             if sfida and sfidato and sfidato in utenti['utente'].values:
                 mask_sfidato = (pronostici['utente']==sfidato)&(pronostici['giornata']==g)&(pronostici['partita']==rid)
                 if mask_sfidato.any():
@@ -102,3 +107,4 @@ def calcola_classifica(utenti, pronostici, partite):
                     elif pron!=risultato and pron_sfidato==risultato:
                         utenti.loc[utenti['utente']==p['utente'],'punti'] -= quota
     return utenti.sort_values('punti',ascending=False).reset_index(drop=True)
+
