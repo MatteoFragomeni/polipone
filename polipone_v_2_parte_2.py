@@ -8,7 +8,7 @@ from polipone_v_2_parte_1 import APP_TITLE, LOGO_FILE, load_data, save_all, calc
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 # -----------------------------
-# CSS globale (layout nuovo, sfondo sfumato e leggibile)
+# CSS globale
 # -----------------------------
 st.markdown("""
 <style>
@@ -16,43 +16,12 @@ st.markdown("""
     background: linear-gradient(to bottom right, #a8c0ff, #3f2b96);
     color: #000000;
 }
-
-/* Header */
-.header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 20px;
-}
-.header img {
-    margin-right: 15px;
-}
-.header h1 {
-    color: #ffffff;
-}
-
-/* Pulsanti grandi principali */
-.main-button button {
-    background-color: #004aad;
-    color: white;
-    font-size: 28px;
-    padding: 40px;
-    margin-bottom: 20px;
-    width: 100%;
-    border-radius: 20px;
-    font-weight: bold;
-}
-.main-button button:hover {
-    background-color: #0073ff;
-}
-
-/* Card interne */
-.card {
-    background-color: rgba(255,255,255,0.85);
-    border-radius: 15px;
-    padding: 15px;
-    margin-bottom: 15px;
-    color: #000000;
-}
+.header { display: flex; align-items: center; margin-bottom: 20px; }
+.header img { margin-right: 15px; }
+.header h1 { color: #ffffff; }
+.main-button button { background-color: #004aad; color: white; font-size: 28px; padding: 40px; margin-bottom: 20px; width: 100%; border-radius: 20px; font-weight: bold; }
+.main-button button:hover { background-color: #0073ff; }
+.card { background-color: rgba(255,255,255,0.85); border-radius: 15px; padding: 15px; margin-bottom: 15px; color: #000000; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,12 +37,12 @@ st.markdown(f"""
 st.markdown("Pronostici Serie A con **🌟 Jolly** (ogni 2 giornate) e **⚔️ Sfide** (ogni 5 giornate).")
 
 # -----------------------------
-# Caricamento dati
+# Caricamento dati sicuro
 # -----------------------------
 utenti, pronostici, partite = load_data()
 
 # -----------------------------
-# Funzioni delle pagine
+# Funzioni pagine
 # -----------------------------
 def page_classifica(utenti, pronostici, partite):
     st.subheader("Classifica aggiornata")
@@ -82,7 +51,7 @@ def page_classifica(utenti, pronostici, partite):
         st.markdown(f"""
         <div class="card">
             <h3 style="color:#004aad;">{row['utente']} 🏆</h3>
-            <p><b>Punti:</b> {row['punti']} | 🌟 Jolly: {row['jolly_usati']} | ⚔️ Sfide: {row['gettoni_sfida']}</p>
+            <p><b>Punti:</b> {row['punti']} | 🌟 Jolly: {row.get('jolly_usati',0)} | ⚔️ Sfide: {row.get('gettoni_sfida',0)}</p>
         </div>
         """, unsafe_allow_html=True)
     if st.button("🔄 Aggiorna classifica"):
@@ -110,7 +79,6 @@ def page_pronostici(utenti, pronostici, partite):
     giornata_sel = giornate_disponibili[st.session_state.giornata_idx]
     partite_giornata = partite[partite['giornata'] == giornata_sel]
 
-    # --- Inserimento pronostici ---
     if menu_pron == "🖊️ Inserimento":
         utente_sel = st.selectbox("Seleziona utente", utenti['utente'].tolist())
         st.markdown("### Inserisci pronostici")
@@ -142,7 +110,6 @@ def page_pronostici(utenti, pronostici, partite):
                     save_all(utenti, pronostici, partite)
                     st.success("Pronostico salvato!")
 
-    # --- Visualizza ---
     elif menu_pron == "👀 Visualizza":
         utente_visualizza = st.selectbox("Seleziona utente", utenti['utente'].tolist())
         st.markdown(f"### Pronostici giornata {giornata_sel}")
@@ -153,7 +120,6 @@ def page_pronostici(utenti, pronostici, partite):
             for _, row in pron_salvati.iterrows():
                 st.markdown(f"<div class='card'>{row['partita']}: {row['pronostico']}</div>", unsafe_allow_html=True)
 
-    # --- Dashboard ---
     elif menu_pron == "📊 Dashboard":
         st.markdown(f"### Dashboard giornata {giornata_sel}")
         for _, row in partite_giornata.iterrows():
@@ -178,7 +144,7 @@ def page_pronostici(utenti, pronostici, partite):
 def page_partite(utenti, pronostici, partite):
     st.subheader("⚽ Gestione Partite")
     menu_partite = st.radio("Sottosezione", ["➕ Aggiungi partite", "📝 Aggiorna risultati", "📄 Visualizza tabella"], horizontal=True)
-    # --- Inserimento ---
+
     if menu_partite == "➕ Aggiungi partite":
         col1, col2 = st.columns(2)
         with col1:
@@ -204,7 +170,6 @@ def page_partite(utenti, pronostici, partite):
                 save_all(utenti, pronostici, partite)
                 st.success(f"Partita {new_id} aggiunta ✅")
 
-    # --- Aggiorna risultati ---
     elif menu_partite == "📝 Aggiorna risultati":
         giornate_disponibili = sorted(partite['giornata'].unique())
         giornata_sel = st.selectbox("Seleziona giornata", giornate_disponibili)
@@ -216,7 +181,6 @@ def page_partite(utenti, pronostici, partite):
                 save_all(utenti, pronostici, partite)
                 st.success(f"Risultato {row['partita']} aggiornato ✅")
 
-    # --- Visualizza ed elimina ---
     elif menu_partite == "📄 Visualizza tabella":
         giornate_disponibili = sorted(partite['giornata'].unique())
         giornata_sel = st.selectbox("Seleziona giornata", giornate_disponibili)
@@ -243,7 +207,7 @@ def page_utenti(utenti, pronostici, partite):
     st.subheader("Gestione Utenti")
     nuovo_utente = st.text_input("Nome nuovo utente")
     if st.button("➕ Aggiungi utente"):
-        if nuovo_utente not in utenti['utente'].values:
+        if nuovo_utente and nuovo_utente not in utenti['utente'].values:
             utenti = pd.concat([utenti, pd.DataFrame([{
                 "utente": nuovo_utente,
                 "punti": 0.0,
@@ -252,29 +216,30 @@ def page_utenti(utenti, pronostici, partite):
             }])], ignore_index=True)
             save_all(utenti, pronostici, partite)
             st.success(f"Utente {nuovo_utente} aggiunto")
-    utente_da_eliminare = st.selectbox("Seleziona utente da eliminare", utenti['utente'].tolist())
-    if st.button("❌ Elimina utente"):
-        utenti = utenti[utenti['utente'] != utente_da_eliminare]
-        save_all(utenti, pronostici, partite)
-        st.success(f"Utente {utente_da_eliminare} eliminato")
+    if not utenti.empty:
+        utente_da_eliminare = st.selectbox("Seleziona utente da eliminare", utenti['utente'].tolist())
+        if st.button("❌ Elimina utente"):
+            utenti = utenti[utenti['utente'] != utente_da_eliminare]
+            save_all(utenti, pronostici, partite)
+            st.success(f"Utente {utente_da_eliminare} eliminato")
     st.dataframe(utenti)
 
 # -----------------------------
-# Menu principale stile app
+# Menu principale
 # -----------------------------
-st.markdown("## Seleziona sezione")
-if st.button("📊 Classifica"):
-    st.session_state['page'] = "classifica"
-if st.button("📝 Pronostici"):
-    st.session_state['page'] = "pronostici"
-if st.button("⚽ Gestione Partite"):
-    st.session_state['page'] = "partite"
-if st.button("👥 Gestione Utenti"):
-    st.session_state['page'] = "utenti"
+if 'page' not in st.session_state:
+    st.session_state['page'] = 'classifica'
 
-# -----------------------------
-# Mostra pagina scelta
-# -----------------------------
+col1, col2, col3, col4 = st.columns(4)
+with col1: 
+    if st.button("📊 Classifica"): st.session_state['page'] = "classifica"
+with col2: 
+    if st.button("📝 Pronostici"): st.session_state['page'] = "pronostici"
+with col3: 
+    if st.button("⚽ Gestione Partite"): st.session_state['page'] = "partite"
+with col4: 
+    if st.button("👥 Gestione Utenti"): st.session_state['page'] = "utenti"
+
 page = st.session_state.get('page', 'classifica')
 if page == "classifica":
     page_classifica(utenti, pronostici, partite)

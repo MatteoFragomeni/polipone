@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import gspread
+from gspread.exceptions import APIError, WorksheetNotFound
 from google.oauth2.service_account import Credentials
 import json
+import time
 
 APP_TITLE = "Polipone 🐙⚽"
 LOGO_FILE = "logo.png"
@@ -26,38 +28,61 @@ PRONOSTICI_SHEET_NAME = st.secrets["google"]["pronostici_sheet_name"]
 PARTITE_SHEET_NAME = st.secrets["google"]["partite_sheet_name"]
 
 # -----------------------------
-# Funzioni di lettura / scrittura
+# Funzioni di lettura / scrittura con retry
 # -----------------------------
-def read_sheet(sheet_id, worksheet_name):
-    sh = gc.open_by_key(sheet_id)
-    ws = sh.worksheet(worksheet_name)
-    data = ws.get_all_records()
-    return pd.DataFrame(data)
+def safe_read_sheet(sheet_id, sheet_name, retries=3, delay=2):
+    for attempt in range(retries):
+        try:
+            sh = gc.open_by_key(sheet_id)
+            ws = sh.worksheet(sheet_name)
+            data = ws.get_all_records()
+            return pd.DataFrame(data)
+        except APIError:
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                st.error(f"Impossibile leggere il foglio '{sheet_name}' dopo {retries} tentativi.")
+                return pd.DataFrame()
+        except WorksheetNotFound:
+            st.error(f"Foglio '{sheet_name}' non trovato.")
+            return pd.DataFrame()
 
-def write_sheet(df, sheet_id, worksheet_name):
-    sh = gc.open_by_key(sheet_id)
-    try:
-        ws = sh.worksheet(worksheet_name)
-        sh.del_worksheet(ws)  # cancella il foglio vecchio
-    except gspread.exceptions.WorksheetNotFound:
-        pass
-    ws = sh.add_worksheet(title=worksheet_name, rows=df.shape[0]+10, cols=df.shape[1]+5)
-    ws.update([df.columns.values.tolist()] + df.values.tolist())
+def safe_write_sheet(df, sheet_id, sheet_name, retries=3, delay=2):
+    for attempt in range(retries):
+        try:
+            sh = gc.open_by_key(sheet_id)
+            try:
+                ws = sh.worksheet(sheet_name)
+                sh.del_worksheet(ws)  # cancella il foglio esistente
+            except WorksheetNotFound:
+                pass
+            ws = sh.add_worksheet(title=sheet_name, rows=df.shape[0]+10, cols=df.shape[1]+5)
+            ws.update([df.columns.values.tolist()] + df.values.tolist())
+            return True
+        except APIError:
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                st.error(f"Impossibile scrivere sul foglio '{sheet_name}' dopo {retries} tentativi.")
+                return False
 
 # -----------------------------
 # Caricamento / salvataggio dati
 # -----------------------------
+@st.cache_data(ttl=600)
 def load_data():
-    utenti = read_sheet(SHEET_ID, UTENTI_SHEET_NAME)
-    pronostici = read_sheet(SHEET_ID, PRONOSTICI_SHEET_NAME)
-    partite = read_sheet(SHEET_ID, PARTITE_SHEET_NAME)
-    utenti['punti'] = utenti['punti'].fillna(0).astype(float)
+    utenti = safe_read_sheet(SHEET_ID, UTENTI_SHEET_NAME)
+    pronostici = safe_read_sheet(SHEET_ID, PRONOSTICI_SHEET_NAME)
+    partite = safe_read_sheet(SHEET_ID, PARTITE_SHEET_NAME)
+
+    if not utenti.empty:
+        utenti['punti'] = utenti['punti'].fillna(0).astype(float)
     return utenti, pronostici, partite
 
 def save_all(utenti, pronostici, partite):
-    write_sheet(utenti, SHEET_ID, UTENTI_SHEET_NAME)
-    write_sheet(pronostici, SHEET_ID, PRONOSTICI_SHEET_NAME)
-    write_sheet(partite, SHEET_ID, PARTITE_SHEET_NAME)
+    safe_write_sheet(utenti, SHEET_ID, UTENTI_SHEET_NAME)
+    safe_write_sheet(pronostici, SHEET_ID, PRONOSTICI_SHEET_NAME)
+    safe_write_sheet(partite, SHEET_ID, PARTITE_SHEET_NAME)
 
 # -----------------------------
 # Funzioni di calcolo classifica
@@ -91,8 +116,8 @@ def calcola_classifica(utenti, pronostici, partite):
             continue
         delta = 0.0
         if risultato in ['1','X','2']:
-            if pron==risultato:
-                delta = quota*(2 if jolly else 1)
+            if pron == risultato:
+                delta = quota * (2 if jolly else 1)
             else:
                 delta = -2*quota if jolly else 0.0
             utenti.loc[utenti['utente']==p['utente'],'punti'] += float(delta)
