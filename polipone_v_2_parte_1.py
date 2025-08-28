@@ -1,35 +1,62 @@
-import streamlit as st
 import pandas as pd
-from pathlib import Path
+import gspread
+from google.oauth2.service_account import Credentials
 
 APP_TITLE = "Polipone 🐙⚽"
-UTENTI_FILE = Path("utenti.csv")
-PRONOSTICI_FILE = Path("pronostici.csv")
-PARTITE_FILE = Path("partite.csv")
-LOGO_FILE = Path("logo.png")
+LOGO_FILE = "logo.png"  # Path del logo
+SHEET_NAME = "polipone_data"  # Nome del tuo Google Sheet
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# Autenticazione Google Sheets
+creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+gc = gspread.authorize(creds)
 
 # -----------------------------
 # Utility
 # -----------------------------
-def ensure_csv(path: Path, columns: list):
-    if not path.exists():
-        pd.DataFrame(columns=columns).to_csv(path, index=False)
-
 def load_data():
-    ensure_csv(UTENTI_FILE, ["utente", "punti", "jolly_usati", "gettoni_sfida"])
-    ensure_csv(PRONOSTICI_FILE, ["utente", "giornata", "partita", "pronostico", "jolly", "sfida", "sfidato"])
-    ensure_csv(PARTITE_FILE, ["giornata", "partita", "casa", "ospite", "quota1", "quotaX", "quota2", "risultato"])
-    utenti = pd.read_csv(UTENTI_FILE)
-    pronostici = pd.read_csv(PRONOSTICI_FILE)
-    partite = pd.read_csv(PARTITE_FILE)
+    """Carica dati da Google Sheet nelle tre tabelle principali."""
+    sh = gc.open(SHEET_NAME)
+    
+    # Leggi dati dai fogli
+    utenti = pd.DataFrame(sh.worksheet("utenti").get_all_records())
+    pronostici = pd.DataFrame(sh.worksheet("pronostici").get_all_records())
+    partite = pd.DataFrame(sh.worksheet("partite").get_all_records())
+    
+    # Assicura che tutte le colonne esistano
+    for df, cols in [
+        (utenti, ["utente", "punti", "jolly_usati", "gettoni_sfida"]),
+        (pronostici, ["utente", "giornata", "partita", "pronostico", "jolly", "sfida", "sfidato"]),
+        (partite, ["giornata", "partita", "casa", "ospite", "quota1", "quotaX", "quota2", "risultato"])
+    ]:
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ""
+    
+    # Conversione tipi
     utenti['punti'] = utenti['punti'].fillna(0).astype(float)
+    
     return utenti, pronostici, partite
 
 def save_all(utenti, pronostici, partite):
-    utenti.to_csv(UTENTI_FILE, index=False)
-    pronostici.to_csv(PRONOSTICI_FILE, index=False)
-    partite.to_csv(PARTITE_FILE, index=False)
+    """Salva i DataFrame su Google Sheets sovrascrivendo i fogli."""
+    sh = gc.open(SHEET_NAME)
+    
+    # Salva utenti
+    sh.worksheet("utenti").clear()
+    sh.worksheet("utenti").update([utenti.columns.tolist()] + utenti.values.tolist())
+    
+    # Salva pronostici
+    sh.worksheet("pronostici").clear()
+    sh.worksheet("pronostici").update([pronostici.columns.tolist()] + pronostici.values.tolist())
+    
+    # Salva partite
+    sh.worksheet("partite").clear()
+    sh.worksheet("partite").update([partite.columns.tolist()] + partite.values.tolist())
 
+# -----------------------------
+# Funzioni di supporto per classifica
+# -----------------------------
 def get_quota(match_row, pron):
     col = f"quota{pron}"
     try:
@@ -37,9 +64,6 @@ def get_quota(match_row, pron):
     except Exception:
         return None
 
-# -----------------------------
-# Scoring logic
-# -----------------------------
 def calcola_classifica(utenti, pronostici, partite):
     utenti = utenti.copy()
     utenti['punti'] = 0.0
@@ -67,7 +91,7 @@ def calcola_classifica(utenti, pronostici, partite):
             else:
                 delta = -2*quota if jolly else 0.0
             utenti.loc[utenti['utente']==p['utente'],'punti'] += float(delta)
-            # sfida
+            # gestione sfida
             if sfida and sfidato and sfidato in utenti['utente'].values:
                 mask_sfidato = (pronostici['utente']==sfidato)&(pronostici['giornata']==g)&(pronostici['partita']==rid)
                 if mask_sfidato.any():
