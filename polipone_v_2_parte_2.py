@@ -12,10 +12,7 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 # -----------------------------
 st.markdown("""
 <style>
-.stApp {
-    background: linear-gradient(to bottom right, #a8c0ff, #3f2b96);
-    color: #000000;
-}
+.stApp { background: linear-gradient(to bottom right, #a8c0ff, #3f2b96); color: #000000; }
 .header { display: flex; align-items: center; margin-bottom: 20px; }
 .header img { margin-right: 15px; }
 .header h1 { color: #ffffff; }
@@ -37,16 +34,24 @@ st.markdown(f"""
 st.markdown("Pronostici Serie A con **🌟 Jolly** (ogni 2 giornate) e **⚔️ Sfide** (ogni 5 giornate).")
 
 # -----------------------------
-# Caricamento dati sicuro
+# Caricamento dati
 # -----------------------------
-utenti, pronostici, partite = load_data()
+if 'utenti' not in st.session_state or 'pronostici' not in st.session_state or 'partite' not in st.session_state:
+    utenti, pronostici, partite = load_data()
+    st.session_state['utenti'] = utenti
+    st.session_state['pronostici'] = pronostici
+    st.session_state['partite'] = partite
 
 # -----------------------------
 # Funzioni pagine
 # -----------------------------
-def page_classifica(utenti, pronostici, partite):
+def page_classifica():
     st.subheader("Classifica aggiornata")
-    classifica = calcola_classifica(utenti, pronostici, partite)
+    classifica = calcola_classifica(
+        st.session_state['utenti'],
+        st.session_state['pronostici'],
+        st.session_state['partite']
+    )
     for _, row in classifica.iterrows():
         st.markdown(f"""
         <div class="card">
@@ -55,14 +60,13 @@ def page_classifica(utenti, pronostici, partite):
         </div>
         """, unsafe_allow_html=True)
     if st.button("🔄 Aggiorna classifica"):
-        classifica = calcola_classifica(utenti, pronostici, partite)
-        st.success("Classifica aggiornata!")
+        st.experimental_rerun()
 
-def page_pronostici(utenti, pronostici, partite):
+def page_pronostici():
     st.subheader("📋 Gestione Pronostici")
     menu_pron = st.radio("Sottosezione", ["🖊️ Inserimento", "👀 Visualizza", "📊 Dashboard"], horizontal=True)
-    
-    giornate_disponibili = sorted(partite['giornata'].unique())
+
+    giornate_disponibili = sorted(st.session_state['partite']['giornata'].unique())
     if 'giornata_idx' not in st.session_state:
         st.session_state.giornata_idx = 0
 
@@ -77,43 +81,42 @@ def page_pronostici(utenti, pronostici, partite):
             st.session_state.giornata_idx += 1
 
     giornata_sel = giornate_disponibili[st.session_state.giornata_idx]
-    partite_giornata = partite[partite['giornata'] == giornata_sel]
+    partite_giornata = st.session_state['partite'][st.session_state['partite']['giornata']==giornata_sel]
 
     if menu_pron == "🖊️ Inserimento":
-        utente_sel = st.selectbox("Seleziona utente", utenti['utente'].tolist())
-        st.markdown("### Inserisci pronostici")
+        utente_sel = st.selectbox("Seleziona utente", st.session_state['utenti']['utente'].tolist())
         for _, row in partite_giornata.iterrows():
-            with st.container():
-                st.markdown(f"### {row['casa']} 🆚 {row['ospite']}")
-                pron = st.radio("Pronostico", ['1','X','2'], key=f"{utente_sel}_{row['partita']}", horizontal=True)
-                jolly_disponibile = (giornata_sel >= 2) and ((giornata_sel - 2) % 2 == 0)
-                jolly = st.checkbox("🌟 Jolly", key=f"jolly_{utente_sel}_{row['partita']}", value=False, disabled=not jolly_disponibile)
-                sfida_disponibile = (giornata_sel >= 5) and ((giornata_sel - 5) % 5 == 0)
-                sfida = False
-                sfidato = None
-                if sfida_disponibile:
-                    sfida = st.checkbox("⚔️ Sfida", key=f"sfida_{utente_sel}_{row['partita']}")
-                    if sfida:
-                        avversari = [u for u in utenti['utente'] if u != utente_sel]
-                        sfidato = st.selectbox("Sfidato", avversari, key=f"sfidato_{utente_sel}_{row['partita']}")
-                if st.button("💾 Salva pronostico", key=f"save_{utente_sel}_{row['partita']}"):
-                    pronostici = pronostici[~((pronostici['utente']==utente_sel) & (pronostici['giornata']==giornata_sel) & (pronostici['partita']==row['partita']))]
-                    pronostici = pd.concat([pronostici, pd.DataFrame([{
-                        "utente": utente_sel,
-                        "giornata": giornata_sel,
-                        "partita": row['partita'],
-                        "pronostico": pron,
-                        "jolly": jolly,
-                        "sfida": sfida,
-                        "sfidato": sfidato
-                    }])], ignore_index=True)
-                    save_all(utenti, pronostici, partite)
-                    st.success("Pronostico salvato!")
+            st.markdown(f"### {row['casa']} 🆚 {row['ospite']}")
+            pron = st.radio("Pronostico", ['1','X','2'], key=f"{utente_sel}_{row['partita']}", horizontal=True)
+            jolly_disponibile = (giornata_sel >= 2) and ((giornata_sel - 2) % 2 == 0)
+            jolly = st.checkbox("🌟 Jolly", key=f"jolly_{utente_sel}_{row['partita']}", value=False, disabled=not jolly_disponibile)
+            sfida_disponibile = (giornata_sel >= 5) and ((giornata_sel - 5) % 5 == 0)
+            sfida = False
+            sfidato = None
+            if sfida_disponibile:
+                sfida = st.checkbox("⚔️ Sfida", key=f"sfida_{utente_sel}_{row['partita']}")
+                if sfida:
+                    avversari = [u for u in st.session_state['utenti']['utente'] if u != utente_sel]
+                    sfidato = st.selectbox("Sfidato", avversari, key=f"sfidato_{utente_sel}_{row['partita']}")
+            if st.button("💾 Salva pronostico", key=f"save_{utente_sel}_{row['partita']}"):
+                pronostici = st.session_state['pronostici']
+                pronostici = pronostici[~((pronostici['utente']==utente_sel)&(pronostici['giornata']==giornata_sel)&(pronostici['partita']==row['partita']))]
+                pronostici = pd.concat([pronostici, pd.DataFrame([{
+                    "utente": utente_sel,
+                    "giornata": giornata_sel,
+                    "partita": row['partita'],
+                    "pronostico": pron,
+                    "jolly": jolly,
+                    "sfida": sfida,
+                    "sfidato": sfidato
+                }])], ignore_index=True)
+                st.session_state['pronostici'] = pronostici
+                st.success("Pronostico aggiornato in memoria! 💾")
 
     elif menu_pron == "👀 Visualizza":
-        utente_visualizza = st.selectbox("Seleziona utente", utenti['utente'].tolist())
-        st.markdown(f"### Pronostici giornata {giornata_sel}")
-        pron_salvati = pronostici[(pronostici['giornata']==giornata_sel) & (pronostici['utente']==utente_visualizza)]
+        utente_visualizza = st.selectbox("Seleziona utente", st.session_state['utenti']['utente'].tolist())
+        pron_salvati = st.session_state['pronostici'][(st.session_state['pronostici']['giornata']==giornata_sel)&
+                                                       (st.session_state['pronostici']['utente']==utente_visualizza)]
         if pron_salvati.empty:
             st.info("Nessun pronostico inserito")
         else:
@@ -123,28 +126,25 @@ def page_pronostici(utenti, pronostici, partite):
     elif menu_pron == "📊 Dashboard":
         st.markdown(f"### Dashboard giornata {giornata_sel}")
         for _, row in partite_giornata.iterrows():
-            with st.container():
-                st.markdown(f"### {row['casa']} 🆚 {row['ospite']}")
-                risultato_reale = row['risultato'] if row['risultato'] else "Non ancora registrato"
-                st.markdown(f"**Risultato reale:** {risultato_reale}")
-                pron_giornata = pronostici[pronostici['partita']==row['partita']]
-                if not pron_giornata.empty:
-                    cols = st.columns(len(utenti))
-                    for i, utente in enumerate(utenti['utente']):
-                        pron = pron_giornata[pron_giornata['utente']==utente]['pronostico']
-                        jolly = pron_giornata[pron_giornata['utente']==utente]['jolly']
-                        sfida = pron_giornata[pron_giornata['utente']==utente]['sfida']
-                        pron_text = pron.values[0] if not pron.empty else "—"
-                        badge = pron_text
-                        if not jolly.empty and jolly.values[0]: badge += " 🌟"
-                        if not sfida.empty and sfida.values[0]: badge += " ⚔️"
-                        cols[i].markdown(f"<div class='card'><b>{utente}</b><br>{badge}</div>", unsafe_allow_html=True)
-                st.markdown("---")
+            st.markdown(f"### {row['casa']} 🆚 {row['ospite']}")
+            risultato_reale = row['risultato'] if row['risultato'] else "Non ancora registrato"
+            st.markdown(f"**Risultato reale:** {risultato_reale}")
+            pron_giornata = st.session_state['pronostici'][st.session_state['pronostici']['partita']==row['partita']]
+            if not pron_giornata.empty:
+                cols = st.columns(len(st.session_state['utenti']))
+                for i, utente in enumerate(st.session_state['utenti']['utente']):
+                    pron = pron_giornata[pron_giornata['utente']==utente]['pronostico']
+                    jolly = pron_giornata[pron_giornata['utente']==utente]['jolly']
+                    sfida = pron_giornata[pron_giornata['utente']==utente]['sfida']
+                    pron_text = pron.values[0] if not pron.empty else "—"
+                    badge = pron_text
+                    if not jolly.empty and jolly.values[0]: badge += " 🌟"
+                    if not sfida.empty and sfida.values[0]: badge += " ⚔️"
+                    cols[i].markdown(f"<div class='card'><b>{utente}</b><br>{badge}</div>", unsafe_allow_html=True)
 
-def page_partite(utenti, pronostici, partite):
+def page_partite():
     st.subheader("⚽ Gestione Partite")
     menu_partite = st.radio("Sottosezione", ["➕ Aggiungi partite", "📝 Aggiorna risultati", "📄 Visualizza tabella"], horizontal=True)
-
     if menu_partite == "➕ Aggiungi partite":
         col1, col2 = st.columns(2)
         with col1:
@@ -156,6 +156,7 @@ def page_partite(utenti, pronostici, partite):
             giornata = st.number_input("Giornata", min_value=1, step=1)
         with col2:
             if st.button("➕ Aggiungi partita"):
+                partite = st.session_state['partite']
                 new_id = f"{casa}-{ospite}"
                 partite = pd.concat([partite, pd.DataFrame([{
                     "giornata": giornata,
@@ -167,24 +168,27 @@ def page_partite(utenti, pronostici, partite):
                     "quota2": quota2,
                     "risultato": ""
                 }])], ignore_index=True)
-                save_all(utenti, pronostici, partite)
-                st.success(f"Partita {new_id} aggiunta ✅")
+                st.session_state['partite'] = partite
+                st.success(f"Partita {new_id} aggiunta in memoria! ✅")
 
     elif menu_partite == "📝 Aggiorna risultati":
-        giornate_disponibili = sorted(partite['giornata'].unique())
+        giornate_disponibili = sorted(st.session_state['partite']['giornata'].unique())
         giornata_sel = st.selectbox("Seleziona giornata", giornate_disponibili)
-        partite_giornata = partite[partite['giornata'] == giornata_sel]
+        partite_giornata = st.session_state['partite'][st.session_state['partite']['giornata']==giornata_sel]
         for _, row in partite_giornata.iterrows():
-            risultato = st.text_input(f"{row['casa']} 🆚 {row['ospite']} (Giornata {giornata_sel})", value=row['risultato'] if row['risultato'] else "", key=f"risultato_{row['partita']}")
+            risultato = st.text_input(f"{row['casa']} 🆚 {row['ospite']} (Giornata {giornata_sel})",
+                                      value=row['risultato'] if row['risultato'] else "",
+                                      key=f"risultato_{row['partita']}")
             if st.button("💾 Salva risultato", key=f"salva_ris_{row['partita']}"):
+                partite = st.session_state['partite']
                 partite.loc[partite['partita']==row['partita'], 'risultato'] = risultato
-                save_all(utenti, pronostici, partite)
-                st.success(f"Risultato {row['partita']} aggiornato ✅")
+                st.session_state['partite'] = partite
+                st.success(f"Risultato {row['partita']} aggiornato in memoria! ✅")
 
     elif menu_partite == "📄 Visualizza tabella":
-        giornate_disponibili = sorted(partite['giornata'].unique())
+        giornate_disponibili = sorted(st.session_state['partite']['giornata'].unique())
         giornata_sel = st.selectbox("Seleziona giornata", giornate_disponibili)
-        partite_giornata = partite[partite['giornata'] == giornata_sel]
+        partite_giornata = st.session_state['partite'][st.session_state['partite']['giornata']==giornata_sel]
         st.markdown(f"### 📅 Partite giornata {giornata_sel}")
         if partite_giornata.empty:
             st.info("Nessuna partita registrata per questa giornata.")
@@ -197,16 +201,12 @@ def page_partite(utenti, pronostici, partite):
                     <p>Risultato: {row['risultato'] if row['risultato'] else '—'}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                if st.button(f"❌ Elimina {row['casa']} - {row['ospite']}", key=f"del_{row['partita']}"):
-                    partite = partite[partite['partita'] != row['partita']]
-                    save_all(utenti, pronostici, partite)
-                    st.warning(f"Partita {row['casa']} - {row['ospite']} eliminata 🚮")
-                    st.experimental_rerun()
 
-def page_utenti(utenti, pronostici, partite):
+def page_utenti():
     st.subheader("Gestione Utenti")
     nuovo_utente = st.text_input("Nome nuovo utente")
     if st.button("➕ Aggiungi utente"):
+        utenti = st.session_state['utenti']
         if nuovo_utente and nuovo_utente not in utenti['utente'].values:
             utenti = pd.concat([utenti, pd.DataFrame([{
                 "utente": nuovo_utente,
@@ -214,39 +214,53 @@ def page_utenti(utenti, pronostici, partite):
                 "jolly_usati": 0,
                 "gettoni_sfida": 0
             }])], ignore_index=True)
-            save_all(utenti, pronostici, partite)
-            st.success(f"Utente {nuovo_utente} aggiunto")
-    if not utenti.empty:
-        utente_da_eliminare = st.selectbox("Seleziona utente da eliminare", utenti['utente'].tolist())
+            st.session_state['utenti'] = utenti
+            st.success(f"Utente {nuovo_utente} aggiunto in memoria!")
+
+    if not st.session_state['utenti'].empty:
+        utente_da_eliminare = st.selectbox("Seleziona utente da eliminare", st.session_state['utenti']['utente'].tolist())
         if st.button("❌ Elimina utente"):
+            utenti = st.session_state['utenti']
             utenti = utenti[utenti['utente'] != utente_da_eliminare]
-            save_all(utenti, pronostici, partite)
-            st.success(f"Utente {utente_da_eliminare} eliminato")
-    st.dataframe(utenti)
+            st.session_state['utenti'] = utenti
+            st.success(f"Utente {utente_da_eliminare} eliminato in memoria!")
+
+    st.dataframe(st.session_state['utenti'])
 
 # -----------------------------
-# Menu principale
+# Menu principale con st.session_state
 # -----------------------------
 if 'page' not in st.session_state:
     st.session_state['page'] = 'classifica'
 
 col1, col2, col3, col4 = st.columns(4)
-with col1: 
+with col1:
     if st.button("📊 Classifica"): st.session_state['page'] = "classifica"
-with col2: 
+with col2:
     if st.button("📝 Pronostici"): st.session_state['page'] = "pronostici"
-with col3: 
+with col3:
     if st.button("⚽ Gestione Partite"): st.session_state['page'] = "partite"
-with col4: 
+with col4:
     if st.button("👥 Gestione Utenti"): st.session_state['page'] = "utenti"
 
-page = st.session_state.get('page', 'classifica')
+page = st.session_state['page']
 if page == "classifica":
-    page_classifica(utenti, pronostici, partite)
+    page_classifica()
 elif page == "pronostici":
-    page_pronostici(utenti, pronostici, partite)
+    page_pronostici()
 elif page == "partite":
-    page_partite(utenti, pronostici, partite)
+    page_partite()
 elif page == "utenti":
-    page_utenti(utenti, pronostici, partite)
+    page_utenti()
+
+# -----------------------------
+# Pulsante batch save per tutte le modifiche
+# -----------------------------
+if st.button("💾 Salva tutte le modifiche su Google Sheets"):
+    save_all(
+        st.session_state['utenti'],
+        st.session_state['pronostici'],
+        st.session_state['partite']
+    )
+    st.success("Tutti i dati salvati ✅")
 

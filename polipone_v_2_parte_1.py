@@ -14,85 +14,76 @@ LOGO_FILE = "logo.png"
 # -----------------------------
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# Legge le credenziali dalle Secret di Streamlit
 service_account_info = json.loads(st.secrets["google"]["service_account"])
-
-# Autorizzazione
 creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 gc = gspread.authorize(creds)
 
-# ID del documento e nomi dei fogli interni
 SHEET_ID = st.secrets["google"]["sheet_id"]
 UTENTI_SHEET_NAME = st.secrets["google"]["utenti_sheet_name"]
 PRONOSTICI_SHEET_NAME = st.secrets["google"]["pronostici_sheet_name"]
 PARTITE_SHEET_NAME = st.secrets["google"]["partite_sheet_name"]
 
 # -----------------------------
-# Funzioni di lettura / scrittura con retry
+# Funzioni di lettura / scrittura sicure
 # -----------------------------
-def safe_read_sheet(sheet_id, sheet_name, retries=3, delay=2):
+def safe_read_sheet(sheet_name, retries=3, delay=2):
     for attempt in range(retries):
         try:
-            sh = gc.open_by_key(sheet_id)
+            sh = gc.open_by_key(SHEET_ID)
             ws = sh.worksheet(sheet_name)
             data = ws.get_all_records()
             return pd.DataFrame(data)
         except APIError:
-            if attempt < retries - 1:
-                time.sleep(delay)
+            if attempt < retries - 1: time.sleep(delay)
             else:
-                st.error(f"Impossibile leggere il foglio '{sheet_name}' dopo {retries} tentativi.")
+                st.error(f"Impossibile leggere '{sheet_name}' dopo {retries} tentativi.")
                 return pd.DataFrame()
         except WorksheetNotFound:
             st.error(f"Foglio '{sheet_name}' non trovato.")
             return pd.DataFrame()
 
-def safe_write_sheet(df, sheet_id, sheet_name, retries=3, delay=2):
+def safe_write_sheet(df, sheet_name, retries=3, delay=2):
     for attempt in range(retries):
         try:
-            sh = gc.open_by_key(sheet_id)
+            sh = gc.open_by_key(SHEET_ID)
             try:
                 ws = sh.worksheet(sheet_name)
-                sh.del_worksheet(ws)  # cancella il foglio esistente
+                ws.clear()  # Non cancellare il foglio, solo pulirlo
             except WorksheetNotFound:
-                pass
-            ws = sh.add_worksheet(title=sheet_name, rows=df.shape[0]+10, cols=df.shape[1]+5)
+                ws = sh.add_worksheet(title=sheet_name, rows=df.shape[0]+10, cols=df.shape[1]+5)
             ws.update([df.columns.values.tolist()] + df.values.tolist())
             return True
         except APIError:
-            if attempt < retries - 1:
-                time.sleep(delay)
+            if attempt < retries - 1: time.sleep(delay)
             else:
-                st.error(f"Impossibile scrivere sul foglio '{sheet_name}' dopo {retries} tentativi.")
+                st.error(f"Impossibile scrivere su '{sheet_name}' dopo {retries} tentativi.")
                 return False
 
 # -----------------------------
-# Caricamento / salvataggio dati
+# Caricamento dati in memoria con caching
 # -----------------------------
 @st.cache_data(ttl=600)
 def load_data():
-    utenti = safe_read_sheet(SHEET_ID, UTENTI_SHEET_NAME)
-    pronostici = safe_read_sheet(SHEET_ID, PRONOSTICI_SHEET_NAME)
-    partite = safe_read_sheet(SHEET_ID, PARTITE_SHEET_NAME)
+    utenti = safe_read_sheet(UTENTI_SHEET_NAME)
+    pronostici = safe_read_sheet(PRONOSTICI_SHEET_NAME)
+    partite = safe_read_sheet(PARTITE_SHEET_NAME)
 
     if not utenti.empty:
         utenti['punti'] = utenti['punti'].fillna(0).astype(float)
     return utenti, pronostici, partite
 
 def save_all(utenti, pronostici, partite):
-    safe_write_sheet(utenti, SHEET_ID, UTENTI_SHEET_NAME)
-    safe_write_sheet(pronostici, SHEET_ID, PRONOSTICI_SHEET_NAME)
-    safe_write_sheet(partite, SHEET_ID, PARTITE_SHEET_NAME)
+    safe_write_sheet(utenti, UTENTI_SHEET_NAME)
+    safe_write_sheet(pronostici, PRONOSTICI_SHEET_NAME)
+    safe_write_sheet(partite, PARTITE_SHEET_NAME)
 
 # -----------------------------
-# Funzioni di calcolo classifica
+# Funzioni classifica
 # -----------------------------
 def get_quota(match_row, pron):
     col = f"quota{pron}"
-    try:
-        return float(match_row[col])
-    except Exception:
-        return None
+    try: return float(match_row[col])
+    except Exception: return None
 
 def calcola_classifica(utenti, pronostici, partite):
     utenti = utenti.copy()
@@ -103,8 +94,7 @@ def calcola_classifica(utenti, pronostici, partite):
         g = int(p['giornata'])
         rid = str(p['partita'])
         key = (g, rid)
-        if key not in partite_idx:
-            continue
+        if key not in partite_idx: continue
         m = partite_idx[key]
         risultato = str(m.get('risultato','')).strip()
         pron = str(p['pronostico']).strip()
@@ -112,8 +102,8 @@ def calcola_classifica(utenti, pronostici, partite):
         sfida = bool(p.get('sfida', False))
         sfidato = p.get('sfidato', None)
         quota = get_quota(m, pron)
-        if quota is None:
-            continue
+        if quota is None: continue
+
         delta = 0.0
         if risultato in ['1','X','2']:
             if pron == risultato:
@@ -121,7 +111,7 @@ def calcola_classifica(utenti, pronostici, partite):
             else:
                 delta = -2*quota if jolly else 0.0
             utenti.loc[utenti['utente']==p['utente'],'punti'] += float(delta)
-            # sfida
+
             if sfida and sfidato and sfidato in utenti['utente'].values:
                 mask_sfidato = (pronostici['utente']==sfidato)&(pronostici['giornata']==g)&(pronostici['partita']==rid)
                 if mask_sfidato.any():
@@ -132,6 +122,7 @@ def calcola_classifica(utenti, pronostici, partite):
                     elif pron!=risultato and pron_sfidato==risultato:
                         utenti.loc[utenti['utente']==p['utente'],'punti'] -= quota
     return utenti.sort_values('punti',ascending=False).reset_index(drop=True)
+
 
 
 
